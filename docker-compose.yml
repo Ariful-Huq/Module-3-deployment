@@ -3,7 +3,7 @@ version: "3.8"
 services:
   express-app:
     build: .
-    image: ${{ secrets.DOCKERHUB_USERNAME }}/express-app:latest
+    image: ${DOCKERHUB_USERNAME}/express-app:latest
     container_name: express-app
     restart: always
     expose:

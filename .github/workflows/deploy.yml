@@ -48,5 +48,6 @@ jobs:
             fi
             cd ~/Module-3-deployment
             git pull origin main
+            export DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}
             docker-compose pull
             docker-compose up -d --build
