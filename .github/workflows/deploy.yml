@@ -42,9 +42,9 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           script: |
-            cd /home/ubuntu/
+            cd /home/ubuntu
             if [ ! -d "Module-3-deployment" ]; then
-              git clone https://github.com:Ariful-Huq/Module-3-deployment.git .
+              git clone https://github.com/Ariful-Huq/Module-3-deployment.git
             fi
             cd ~/Module-3-deployment
             git pull origin main
