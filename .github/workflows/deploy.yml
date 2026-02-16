@@ -42,7 +42,11 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           script: |
-            cd /home/${{ secrets.EC2_USER }}/Module-3-deployment
+            cd /home/ubuntu
+            if [ ! -d "Module-3-deployment" ]; then
+              git clone https://github.com:Ariful-Huq/Module-3-deployment.git Module-3-deployment
+            fi
+            cd Module-3-deployment
             git pull origin main
             docker-compose pull
             docker-compose up -d --build
