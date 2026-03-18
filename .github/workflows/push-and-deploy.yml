@@ -1,4 +1,4 @@
-name: Deploy to GCP Kubernetes
+name: Deploy to GCP VM
 
 on:
   push:
@@ -6,50 +6,27 @@ on:
       - main
 
 jobs:
-  build-and-push:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/express-app:latest
-
-  deploy:
-    runs-on: ubuntu-latest
-    needs: build-and-push
-
-    steps:
-      - name: Deploy to GCP VM via SSH
+      - name: SSH & deploy to GCP VM
         uses: appleboy/ssh-action@v0.1.10
         with:
           host: ${{ secrets.GCP_VM_HOST }}
-          username: ${{ secrets.GCP_VM_USER }}   # should be ubuntu
+          username: ubuntu
           key: ${{ secrets.GCP_VM_SSH_KEY }}
           port: 22
           script_stop: true
           command_timeout: 15m
-
           script: |
             set -e  # fail fast
-
             echo "📦 Starting deployment..."
 
-            cd /home/${{ secrets.GCP_VM_USER }}
+            cd /home/ubuntu
 
             # Clone repo if not exists
             if [ ! -d "Module-3-deployment" ]; then
@@ -59,8 +36,8 @@ jobs:
             cd Module-3-deployment
             git pull origin main
 
-            # Ensure kubeconfig works in non-interactive shell
-            export KUBECONFIG=/etc/kubernetes/admin.conf
+            # Use kubeconfig from ubuntu user's home
+            export KUBECONFIG=$HOME/.kube/config
 
             # Ensure namespace exists
             kubectl get namespace production >/dev/null 2>&1 || kubectl create namespace production
@@ -70,13 +47,13 @@ jobs:
             kubectl apply -f deployment.yaml
             kubectl apply -f service.yaml
 
-            # Allow scheduling on single node
+            # Allow scheduling on single node (if single-node cluster)
             kubectl taint nodes --all node-role.kubernetes.io/control-plane- >/dev/null 2>&1 || true
 
             # Restart deployment to pull latest image
             kubectl rollout restart deployment express-nginx-deployment -n production
 
-            # Wait for rollout (better than just wait)
+            # Wait for rollout
             echo "⏳ Waiting for rollout..."
             kubectl rollout status deployment express-nginx-deployment -n production --timeout=180s
 
@@ -86,10 +63,9 @@ jobs:
               --selector=app=express-nginx \
               --timeout=180s
 
-            # Debug output (very useful in CI)
+            # Debug output
             echo "📊 Final pod status:"
             kubectl get pods -n production -o wide
-
             echo "🌐 Service info:"
             kubectl get svc -n production
 
