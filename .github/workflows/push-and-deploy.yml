@@ -3,7 +3,7 @@ name: Deploy to GCP Kubernetes
 on:
   push:
     branches:
-      - main   # or your deployment branch
+      - main
 
 jobs:
   build-and-push:
@@ -34,43 +34,63 @@ jobs:
     needs: build-and-push
 
     steps:
-      - name: SSH into GCP VM and deploy to Kubernetes
+      - name: Deploy to GCP VM via SSH
         uses: appleboy/ssh-action@v0.1.10
         with:
           host: ${{ secrets.GCP_VM_HOST }}
-          username: ${{ secrets.GCP_VM_USER }}
+          username: ${{ secrets.GCP_VM_USER }}   # should be ubuntu
           key: ${{ secrets.GCP_VM_SSH_KEY }}
           port: 22
+          script_stop: true
+          command_timeout: 15m
+
           script: |
-            cd /home/${{ secrets.GCP_VM_USER }}/Module-3-deployment || exit 1
+            set -e  # fail fast
+
+            echo "📦 Starting deployment..."
+
+            cd /home/${{ secrets.GCP_VM_USER }}
+
+            # Clone repo if not exists
+            if [ ! -d "Module-3-deployment" ]; then
+              git clone https://github.com/Ariful-Huq/Module-3-deployment.git
+            fi
+
+            cd Module-3-deployment
             git pull origin main
 
-            # Export DockerHub username
-            export DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}
+            # Ensure kubeconfig works in non-interactive shell
+            export KUBECONFIG=/etc/kubernetes/admin.conf
 
-            # Ensure Kubernetes namespace exists
+            # Ensure namespace exists
             kubectl get namespace production >/dev/null 2>&1 || kubectl create namespace production
 
-            # Apply manifests
+            # Apply configs
             kubectl apply -f nginx-config.yaml
             kubectl apply -f deployment.yaml
             kubectl apply -f service.yaml
 
-            # Untaint control-plane node (for single-node clusters)
-            kubectl taint nodes --all node-role.kubernetes.io/control-plane- >/dev/null 2>&1
+            # Allow scheduling on single node
+            kubectl taint nodes --all node-role.kubernetes.io/control-plane- >/dev/null 2>&1 || true
 
-            # Restart deployment to use latest Docker image
+            # Restart deployment to pull latest image
             kubectl rollout restart deployment express-nginx-deployment -n production
 
-            # Wait until all pods are ready
-            echo "Waiting for pods to be fully ready..."
+            # Wait for rollout (better than just wait)
+            echo "⏳ Waiting for rollout..."
+            kubectl rollout status deployment express-nginx-deployment -n production --timeout=180s
+
+            # Extra safety: ensure pods are ready
             kubectl wait --namespace production \
               --for=condition=Ready pods \
               --selector=app=express-nginx \
               --timeout=180s
 
-            # Show final status
-            kubectl get pods -n production
+            # Debug output (very useful in CI)
+            echo "📊 Final pod status:"
+            kubectl get pods -n production -o wide
+
+            echo "🌐 Service info:"
             kubectl get svc -n production
 
             echo "✅ Deployment completed successfully!"
